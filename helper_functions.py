@@ -141,24 +141,18 @@ def find_orfs(sequence, start_codons, stop_codons):
         tuples of form (start_loc, stop_loc)
 
     """
-    orfs = []
     in_orf = False
-    start_loc = None
-    
-    # Iterate through codons in the sequence using the `codons` function
-    for i, codon in enumerate(codons(sequence)):
-        pos = i * 3  # Calculate the starting position of this codon in the sequence
-        
-        if codon in start_codons and not in_orf:
-            # Start of a new ORF
+    end = -1
+    start = -1
+    orfs = []
+    for i in range(0, len(sequence) - 2, 3):
+        if not in_orf and sequence[i:i + 3] in start_codons:
+            start = i
             in_orf = True
-            start_loc = pos
-
-        elif codon in stop_codons and in_orf:
-            # End of the ORF, add it to list
-            orfs.append((start_loc, pos + 3))
-            in_orf = False  # Reset the flag for a new ORF
-
+        elif in_orf and sequence[i:i + 3] in stop_codons:
+            end = i+3
+            in_orf = False
+            orfs.append((start, end))
     return orfs
 
 
@@ -182,23 +176,15 @@ def find_all_orfs(sequence, start_codons, stop_codons):
 
     """
 
-    orfs = []  # Initialize orfs as an empty list to store found ORFs
+    orfs = []
+    for offset in range(3):
+        orfs.extend([(1,elem[0]+offset,elem[1]+offset) for elem in find_orfs(sequence[offset:], start_codons, stop_codons)])
+    seq_comp = sequence[::-1].replace("A", "N").replace("T", "A").replace("N", "T") \
+        .replace("C", "N").replace("G", "C").replace("N", "G")
+    seq_len = len(sequence)
+    for offset in range(3):
+        orfs.extend([(-1,seq_len-elem[1]-offset,seq_len-elem[0]-offset) for elem in find_orfs(seq_comp[offset:], start_codons, stop_codons)])
     
-    # Find ORFs in the original sequence (three reading frames)
-    for frame in range(3):
-        frame_sequence = sequence[frame:]  # Frame-specific sequence
-        orfs += [(1, start + frame, stop + frame) for start, stop in find_orfs(frame_sequence, start_codons, stop_codons)]
-
-    # Find ORFs in the reverse complement sequence (three reading frames)
-    rev_sequence = sequence.reverse_complement()
-    for frame in range(3):
-        frame_sequence = rev_sequence[frame:]  # Frame-specific sequence
-        found_orfs = find_orfs(frame_sequence, start_codons, stop_codons)
-        # Adjust positions for reverse complement
-        for start_loc, stop_loc in found_orfs:
-            # Reverse complement strand is -1, adjust start and stop locations
-            orfs.append((-1, len(sequence) - stop_loc, len(sequence) - start_loc))
-
     return orfs
 
 
@@ -218,55 +204,46 @@ def translate_to_protein(seq):
         The translated protein sequence.
 
     """
-    codon_table = {
-        'AUG': 'M',  # Start codon
-        'UAA': '',   # Stop codon
-        'UAG': '',   # Stop codon
-        'UGA': '',   # Stop codon
-        'UUU': 'F',  'UUC': 'F',
-        'UUA': 'L',  'UUG': 'L',
-        'CUU': 'L',  'CUC': 'L', 'CUA': 'L', 'CUG': 'L',
-        'AUU': 'I',  'AUC': 'I', 'AUA': 'I',
-        'GUU': 'V',  'GUC': 'V', 'GUA': 'V', 'GUG': 'V',
-        'CCU': 'P',  'CCC': 'P', 'CCA': 'P', 'CCG': 'P',
-        'ACU': 'T',  'ACC': 'T', 'ACA': 'T', 'ACG': 'T',
-        'GCU': 'A',  'GCC': 'A', 'GCA': 'A', 'GCG': 'A',
-        'CAU': 'H',  'CAC': 'H',
-        'CAA': 'Q',  'CAG': 'Q',
-        'AAU': 'N',  'AAC': 'N',
-        'AAA': 'K',  'AAG': 'K',
-        'GAU': 'D',  'GAC': 'D',
-        'GAA': 'E',  'GAG': 'E',
-        'UAU': 'Y',  'UAC': 'Y',
-        'UAA': '',   # Stop codon
-        'UAG': '',   # Stop codon
-        'CAU': 'H',  'CAC': 'H',
-        'AAU': 'N',  'AAC': 'N',
-        'GAU': 'D',  'GAC': 'D',
-        'UGU': 'C',  'UGC': 'C',
-        'UGA': '',   # Stop codon
-        'CUG': 'L',
-        'UGA': '',   # Stop codon
+    translations = {
+        "A": ["GCT", "GCC", "GCA", "GCG"],
+        "C": ["TGT", "TGC"],
+        "D": ["GAT", "GAC"],
+        "E": ["GAA", "GAG"],
+        "F": ["TTT", "TTC"],
+        "G": ["GGT", "GGC", "GGA", "GGG"],
+        "H": ["CAT", "CAC"],
+        "I": ["ATT", "ATC", "ATA"],
+        "K": ["AAA", "AAG"],
+        "L": ["TTA", "TTG", "CTT", "CTC", "CTA", "CTG"],
+        "M": ["ATG"],
+        "N": ["AAT", "AAC"],
+        "P": ["CCT", "CCC", "CCA", "CCG"],
+        "Q": ["CAA", "CAG"],
+        "R": ["CGT", "CGC", "CGA", "CGG", "AGA", "AGG"],
+        "S": ["TCT", "TCC", "TCA", "TCG", "AGT", "AGC"],
+        "T": ["ACT", "ACC", "ACA", "ACG"],
+        "V": ["GTT", "GTC", "GTA", "GTG"],
+        "W": ["TGG"],
+        "Y": ["TAC", "TAT"]
     }
 
-    protein_seq = []
-    
-    # Convert the sequence to uppercase and ensure it's a multiple of 3
-    seq = seq.upper()
-    
-    # Iterate through the sequence in steps of 3
-    for i in range(0, len(seq) - 2, 3):
-        codon = seq[i:i + 3]
-        # Translate the codon into an amino acid
-        amino_acid = codon_table.get(codon, '')
-        
-        # If it's a stop codon, break the translation
-        if amino_acid == '':
-            break
-        
-        protein_seq.append(amino_acid)
+    def get_key(element_to_find):
+        """Helper function to get the amino acid for a given codon."""
+        for key, values in translations.items():
+            if element_to_find in values:
+                return key
+        return ""  # Return empty string if codon is not found
 
-    return ''.join(protein_seq)
+    protein_sequence = ""
+    for i in range(0, len(seq) - 2, 3):  # Iterate over the sequence in steps of 3
+        codon = seq[i:i+3]
+        amino_acid = get_key(codon)
+        if amino_acid:  # Only add valid amino acids
+            protein_sequence += amino_acid
+        else:
+            print(f"Warning: Invalid codon {codon} at position {i} ignored")
+
+    return protein_sequence
 
 # Example usage
 nucleotide_sequence = "AUGGCCUAA"  # Example nucleotide sequence (start, amino acids, stop)
@@ -292,34 +269,30 @@ def find_all_orfs_nested(sequence, start_codons, stop_codons):
         for reference strand and -1 for reverse complement.
 
     """
+    def find_nested(sequence, start_codons, stop_codons):
+        start_found = False
+        starts = []
+        end = -1
+        orfs = []
+        for i in range(0, len(sequence) - 2, 3):
+            if sequence[i:i + 3] in start_codons:
+                starts.append(i)
+                start_found = True
+            elif start_found and sequence[i:i + 3] in stop_codons:
+                end = i+3
+                start_found = False
+                for s in starts:
+                    orfs.append((s, end))
+                starts = []
+        return orfs
+
     orfs = []
-
-    # For positive strand
-    for frame in range(3):
-        pos = frame
-        while pos < len(sequence) - 3:
-            codon = sequence[pos:pos+3]
-            if codon in start_codons:
-                # Found a start codon, now search for stop codon
-                for end in range(pos+3, len(sequence) - 2, 3):
-                    stop_codon = sequence[end:end+3]
-                    if stop_codon in stop_codons:
-                        orfs.append((1, pos, end+3))  # Record ORF and move on
-                        break  # Exit inner loop, go to next start codon
-            pos += 3
+    for offset in range(3):
+        orfs.extend([(1,elem[0]+offset,elem[1]+offset) for elem in find_nested(sequence[offset:], start_codons, stop_codons)])
+    seq_comp = sequence[::-1].replace("A", "N").replace("T", "A").replace("N", "T") \
+        .replace("C", "N").replace("G", "C").replace("N", "G")
+    seq_len = len(sequence)
+    for offset in range(3):
+        orfs.extend([(-1,seq_len-elem[1]-offset,seq_len-elem[0]-offset) for elem in find_nested(seq_comp[offset:], start_codons, stop_codons)])
     
-    # Repeat for reverse complement if needed
-    rev_sequence = sequence.reverse_complement()
-    for frame in range(3):
-        pos = frame
-        while pos < len(rev_sequence) - 3:
-            codon = rev_sequence[pos:pos+3]
-            if codon in start_codons:
-                for end in range(pos+3, len(rev_sequence) - 2, 3):
-                    stop_codon = rev_sequence[end:end+3]
-                    if stop_codon in stop_codons:
-                        orfs.append((-1, len(sequence) - (end+3), len(sequence) - pos))
-                        break
-            pos += 3
-
     return orfs
